@@ -9,10 +9,6 @@
     <p class="text-sm sm:text-base text-gray-400">Explanation of SCHELI Plugin Variables</p>
   </header>
 
-  <section class="mb-6 sm:mb-8">
-    <h2 class="text-xl sm:text-2xl font-bold mb-3 sm:mb-4">Variables</h2>
-    <!-- Add variable explanations here -->
-  </section>
 
   <section class="mb-6 sm:mb-8">
     <h2 class="text-xl sm:text-2xl font-bold mb-3 sm:mb-4 text-center">Segmentation Tutorial</h2>

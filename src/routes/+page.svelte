@@ -27,8 +27,11 @@
       <a href="/manual-cell-classifier" class="text-sm sm:text-base inline-block bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-3 sm:px-4 rounded w-full sm:w-auto text-center mb-2 sm:mb-0">
         Manual Cell Classifier
       </a>
-      <a href="/cell-visualizer" class="text-sm sm:text-base inline-block bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-3 sm:px-4 rounded w-full sm:w-auto text-center">
+      <a href="/cell-visualizer" class="text-sm sm:text-base inline-block bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-3 sm:px-4 rounded w-full sm:w-auto text-center mb-2 sm:mb-0">
         Cell Visualizer
+      </a>
+      <a href="https://github.com/sebastianmicu24/SCHELI" class="text-sm sm:text-base inline-block bg-black hover:bg-gray-700 text-white font-bold py-2 px-3 sm:px-4 rounded w-full sm:w-auto text-center" target="_blank" rel="noopener noreferrer">
+        GitHub
       </a>
     </div>
   </section>
