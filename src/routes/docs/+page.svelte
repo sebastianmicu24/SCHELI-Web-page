@@ -24,7 +24,7 @@
     <h2 class="text-xl sm:text-2xl font-bold mb-3 sm:mb-4 text-center">Classification Tutorial</h2>
     <div class="relative mx-auto" style="max-width: 800px;">
       <div style="position: relative; padding-bottom: 56.25%; height: 0; overflow: hidden;">
-        <iframe src="https://www.youtube.com/embed/n-6RJXikKnE" title="SCHELI Classification" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen style="position: absolute; top: 0; left: 0; width: 100%; height: 100%;"></iframe>
+        <iframe src="https://www.youtube.com/embed/5cZgp4kuy3o" title="SCHELI Classification" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen style="position: absolute; top: 0; left: 0; width: 100%; height: 100%;"></iframe>
       </div>
     </div>
   </section>
