@@ -48,11 +48,12 @@
     </div>
   </section>
 
-  <section class="mb-8">
-    <h2 class="text-2xl font-bold mb-4">Installation Guide</h2>
-    <div class="aspect-w-16 aspect-h-9 bg-gray-200 rounded-lg flex items-center justify-center">
-      <!-- YouTube video will be embedded here -->
-      <p class="text-gray-500">Video coming soon</p>
+  <section class="mb-6 sm:mb-8">
+    <h2 class="text-xl sm:text-2xl font-bold mb-3 sm:mb-4 text-center">SCHELI Installation</h2>
+    <div class="relative mx-auto" style="max-width: 800px;">
+      <div style="position: relative; padding-bottom: 56.25%; height: 0; overflow: hidden;">
+        <iframe src="https://www.youtube.com/embed/BkNhT8zFRWk" title="SCHELI Plugin Installation Tutorial" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen style="position: absolute; top: 0; left: 0; width: 100%; height: 100%;"></iframe>
+      </div>
     </div>
   </section>
 
