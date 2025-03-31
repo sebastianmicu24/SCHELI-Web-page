@@ -1,0 +1,185 @@
+body {
+font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+margin: 0;
+padding: 0;
+background-color: #f8f9fa;
+color: #343a40;
+}
+
+.container {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        padding: 20px;
+    }
+
+    .controls, .class-color-controls {
+        background-color: white;
+        border-radius: 10px;
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        padding: 20px;
+        margin-bottom: 20px;
+        width: 90%;
+        max-width: 1200px;
+    }
+
+    .controls {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        gap: 20px;
+    }
+
+     .class-color-controls {
+        display: grid;
+        /* Adjust grid columns for color pickers + labels */
+         grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 15px;
+        align-items: center;
+        margin: 20px 0;
+    }
+
+    .color-control-group {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .control-group {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+    }
+
+    .canvas-container {
+        width: 90vw;
+        height: 70vh;
+        overflow: auto;
+        border: 2px solid #ced4da;
+        border-radius: 10px;
+        background: white;
+        position: relative;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    }
+
+    canvas {
+        display: block;
+        background-color: #f0f0f0;
+        /* Ensure canvas starts without explicit large dimensions set in style */
+    }
+
+    /* Consistent Input Styles */
+    button, select, input[type="number"], input[type="text"], input[type="color"] {
+        padding: 10px 15px;
+        border-radius: 8px;
+        border: 1px solid #ced4da;
+        font-size: 16px;
+        transition: all 0.3s ease;
+        background-color: white;
+    }
+
+     input[type="color"] {
+        width: 40px; /* Smaller color picker */
+        height: 40px;
+        padding: 2px; /* Adjust padding for color picker */
+        vertical-align: middle;
+     }
+
+    button {
+        background-color: #007bff;
+        color: white;
+        border: none;
+        cursor: pointer;
+        font-weight: 500;
+    }
+
+    button:hover, button:focus {
+        background-color: #0056b3;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        outline: none;
+    }
+    input:focus, select:focus {
+        border-color: #007bff;
+        box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
+        outline: none;
+    }
+
+    .file-input-label {
+        padding: 10px 15px;
+        background-color: #28a745;
+        color: white;
+        border-radius: 8px;
+        cursor: pointer;
+        display: inline-block;
+        font-weight: 500;
+        transition: background-color 0.3s ease;
+    }
+
+    .file-input-label:hover {
+        background-color: #218838;
+    }
+
+    input[type="file"] {
+        display: none;
+    }
+
+    select {
+        min-width: 180px;
+    }
+    h1, h3 {
+        color: #0056b3;
+        margin-bottom: 1rem;
+    }
+    h1{
+        text-align: center;
+    }
+
+    .zoom-controls {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+    }
+
+    .counters-container {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 10px;
+      margin-top: 20px;
+    }
+
+    .class-counter {
+        padding: 5px 10px;
+        border-radius: 5px;
+        font-size: 0.8em;
+        font-weight: bold;
+        color: white; /* Default text color, adjust below */
+    }
+
+    .settings-group {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .setting-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .color-preview {
+        width: 20px;
+        height: 20px;
+        border: 1px solid #ced4da;
+        border-radius: 4px;
+        display: inline-block;
+        vertical-align: middle;
+    }
+
+    /* Style for the filter dropdown group */
+    .filter-group {
+        display: flex;
+        flex-direction: column;
+        gap: 5px; /* Space between label and dropdown */
+        margin-top: 10px; /* Space above the filter */
+    }

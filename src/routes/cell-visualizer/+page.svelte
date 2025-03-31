@@ -1,815 +1,801 @@
 <svelte:head>
-  <title>Cell Visualizer</title>
-  <meta name="description" content="Cell Visualizer Page" />
+  <title>Cell Visualization Tool</title>
+  <meta name="description" content="Cell Visualization Tool for analyzing cell data" />
 </svelte:head>
 
-<div class="container mx-auto py-8">
-  <h1 class="text-3xl font-bold mb-2 text-center">Cell Visualization Tool</h1>
+<script lang="ts">
+  import { onMount } from 'svelte';
+  // Remove styles.css import to prevent global style conflicts
+  import Papa from 'papaparse';
+  import type { ParseResult } from 'papaparse';
+  
+  // We'll dynamically import UTIF to avoid SSR issues
+  let UTIF: any = null;
+  
+  // Svelte action to add webkitdirectory attribute
+  function addWebkitDirectory(node: HTMLElement) {
+    // @ts-ignore - TypeScript doesn't know about webkitdirectory
+    node.webkitdirectory = true;
+    // @ts-ignore
+    node.directory = true;
+    return {};
+  }
 
-  <div class="controls">
-    <div class="control-group">
-      <h3>Input Files</h3>
-      <div>
-        <label class="file-input-label" for="imageFolderInput">Choose Image Folder</label>
-        <input type="file" id="imageFolderInput" webkitdirectory directory multiple>
-        <span id="imageFolderName" style="margin-left: 10px; font-style: italic;"></span>
-      </div>
-      <select id="imageDropdown" style="display: none;"></select>
+  // --- Type Definitions ---
+  interface ImageScaleInfo {
+    scale: number;
+    offsetX: number;
+    offsetY: number;
+    imgWidth: number;
+    imgHeight: number;
+  }
 
-      <div>
-        <label class="file-input-label" for="csvFileInput">Choose Cell Data File (.csv)</label>
-        <input type="file" id="csvFileInput" accept=".csv">
-        <span id="csvFileName" style="margin-left: 10px; font-style: italic;"></span>
-      </div>
-      <div class="filter-group">
-        <label for="filterDropdown">Filter by Original File:</label>
-        <select id="filterDropdown" style="display: none;"></select>
-      </div>
-    </div>
+  // --- State Variables ---
+  let imageFiles: File[] = [];
+  let currentImageFile: File | null = null;
+  let data: string[][] | null = null; // Holds FULL parsed CSV data [headers, [row1], ...]
+  let backgroundImage: HTMLImageElement | ImageBitmap | null = null;
+  let imageScaleInfo: ImageScaleInfo | null = null;
+  let currentFilterValue: string = ""; // Bound to filter dropdown
+  let originalFileColIndex: number = -1; // Index of the 'Original_File' column in CSV
+  let zoomFactor: number = 1;
+  let borderWidth: number = 2;
+  let fillOpacity: number = 0.2;
+  let globalScaleValue: number = 1;
+  let uniqueFilterValues: string[] = []; // For the filter dropdown
+  
+  // UI colors map - used as FALLBACK if CSV color is missing/invalid
+  let classColors: { [key: string]: string } = {
+    '0': '#ff0000',
+    '1': '#00ff00',
+    '2': '#0000ff',
+    '3': '#ffff00',
+    'unclassified': '#808080' // Color for indices not in map or invalid CSV color
+  };
+  
+  // Store mapping from Predicted_Class_Index to Predicted_Class_Name
+  let classNameMap: { [key: string]: string } = {};
 
-    <div class="control-group">
-      <h3>Display Settings</h3>
-      <div class="settings-group">
-        <div class="setting-row">
-          <label for="globalScale">Scale (px/unit):</label>
-          <input type="number" id="globalScale" value="0.29" step="0.01" min="0.01" max="2">
-        </div>
-        <div class="setting-row">
-          <label for="borderWidth">Border Width:</label>
-          <input type="number" id="borderWidth" value="2" step="0.5" min="0">
-        </div>
-        <div class="setting-row">
-          <label for="fillOpacity">Fill Opacity:</label>
-          <input type="number" id="fillOpacity" value="0.2" step="0.05" min="0" max="1">
-        </div>
-      </div>
+  // --- Element References ---
+  let canvasElement: HTMLCanvasElement;
+  let scrollContainerElement: HTMLDivElement;
+  let imageDropdownElement: HTMLSelectElement;
+  let filterDropdownElement: HTMLSelectElement;
+  let countersContainerElement: HTMLDivElement;
+  let zoomLevelElement: HTMLSpanElement;
+  let imageFolderNameElement: HTMLSpanElement;
+  let csvFileNameElement: HTMLSpanElement;
 
-      <div class="zoom-controls">
-        <label>Zoom:</label>
-        <button id="zoomOut">-</button>
-        <span id="zoomLevel">100%</span>
-        <button id="zoomIn">+</button>
-        <button id="resetZoom">Reset</button>
-      </div>
-    </div>
-  </div>
-
-  <div class="class-color-controls">
-    <h3>Class Colors (Fallback for Predicted_Class_Index)</h3>
-    <div class="color-control-group">
-      <label for="class0Color">Index 0:</label>
-      <input type="color" id="class0Color" value="#ff0000">
-      <span class="color-preview" id="class0Preview"></span>
-    </div>
-    <div class="color-control-group">
-      <label for="class1Color">Index 1:</label>
-      <input type="color" id="class1Color" value="#00ff00">
-      <span class="color-preview" id="class1Preview"></span>
-    </div>
-    <div class="color-control-group">
-      <label for="class2Color">Index 2:</label>
-      <input type="color" id="class2Color" value="#0000ff">
-      <span class="color-preview" id="class2Preview"></span>
-    </div>
-    <div class="color-control-group">
-      <label for="class3Color">Index 3:</label>
-      <input type="color" id="class3Color" value="#ffff00">
-      <span class="color-preview" id="class3Preview"></span>
-    </div>
-    <div class="color-control-group">
-      <label for="unclassifiedColor">Other/NA:</label>
-      <input type="color" id="unclassifiedColor" value="#808080">
-      <span class="color-preview" id="unclassifiedPreview"></span>
-    </div>
-  </div>
-
-  <div class="counters-container" id="countersContainer">
-    <!-- Class counters will be added here -->
-  </div>
-
-  <div class="canvas-container" id="scrollContainer">
-    <canvas id="canvas"></canvas>
-  </div>
-</div>
-
-<style>
-body {
-font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-margin: 0;
-padding: 0;
-background-color: #f8f9fa;
-color: #343a40;
-}
-
-.container {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        padding: 20px;
-    }
-
-    .controls, .class-color-controls {
-        background-color: white;
-        border-radius: 10px;
-        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-        padding: 20px;
-        margin-bottom: 20px;
-        width: 90%;
-        max-width: 1200px;
-    }
-
-    .controls {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-        gap: 20px;
-    }
-
-     .class-color-controls {
-        display: grid;
-        /* Adjust grid columns for color pickers + labels */
-         grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-        gap: 15px;
-        align-items: center;
-        margin: 20px 0;
-    }
-
-    .color-control-group {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-    }
-
-    .control-group {
-        display: flex;
-        flex-direction: column;
-        gap: 10px;
-    }
-
-    .canvas-container {
-        width: 90vw;
-        height: 70vh;
-        overflow: auto;
-        border: 2px solid #ced4da;
-        border-radius: 10px;
-        background: white;
-        position: relative;
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-    }
-
-    canvas {
-        display: block;
-        background-color: #f0f0f0;
-        /* Ensure canvas starts without explicit large dimensions set in style */
-    }
-
-    /* Consistent Input Styles */
-    button, select, input[type="number"], input[type="text"], input[type="color"] {
-        padding: 10px 15px;
-        border-radius: 8px;
-        border: 1px solid #ced4da;
-        font-size: 16px;
-        transition: all 0.3s ease;
-        background-color: white;
-    }
-
-     input[type="color"] {
-        width: 40px; /* Smaller color picker */
-        height: 40px;
-        padding: 2px; /* Adjust padding for color picker */
-        vertical-align: middle;
-     }
-
-    button {
-        background-color: #007bff;
-        color: white;
-        border: none;
-        cursor: pointer;
-        font-weight: 500;
-    }
-
-    button:hover, button:focus {
-        background-color: #0056b3;
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-        outline: none;
-    }
-    input:focus, select:focus {
-        border-color: #007bff;
-        box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
-        outline: none;
-    }
-
-    .file-input-label {
-        padding: 10px 15px;
-        background-color: #28a745;
-        color: white;
-        border-radius: 8px;
-        cursor: pointer;
-        display: inline-block;
-        font-weight: 500;
-        transition: background-color 0.3s ease;
-    }
-
-    .file-input-label:hover {
-        background-color: #218838;
-    }
-
-    input[type="file"] {
-        display: none;
-    }
-
-    select {
-        min-width: 180px;
-    }
-    h1, h3 {
-        color: #0056b3;
-        margin-bottom: 1rem;
-    }
-    h1{
-        text-align: center;
-    }
-
-    .zoom-controls {
-        display: flex;
-        align-items: center;
-        gap: 5px;
-    }
-
-    .counters-container {
-      display: flex;
-      flex-wrap: wrap;
-      justify-content: center;
-      gap: 10px;
-      margin-top: 20px;
-    }
-
-    .class-counter {
-        padding: 5px 10px;
-        border-radius: 5px;
-        font-size: 0.8em;
-        font-weight: bold;
-        color: white; /* Default text color, adjust below */
-    }
-
-    .settings-group {
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-    }
-
-    .setting-row {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-    }
-
-    .color-preview {
-        width: 20px;
-        height: 20px;
-        border: 1px solid #ced4da;
-        border-radius: 4px;
-        display: inline-block;
-        vertical-align: middle;
-    }
-
-    /* Style for the filter dropdown group */
-    .filter-group {
-        display: flex;
-        flex-direction: column;
-        gap: 5px; /* Space between label and dropdown */
-        margin-top: 10px; /* Space above the filter */
-    }
-</style>
-
-<script>
-    // Global variables
-    let backgroundImage = null;
-    let imageScaleInfo = null; // Stores { scale, offsetX, offsetY, imgWidth, imgHeight }
-    let data = null; // Holds FULL parsed CSV data [headers, [row1], [row2], ...]
-    let imageFiles = []; // Holds list of selected image files
-    let currentImageFile = null; // The currently selected File object for image
-    let currentFilterValue = null; // The currently selected value from Original_File dropdown
-    let originalFileColIndex = -1; // Index of the 'Original_File' column in CSV
-    let zoomFactor = 1;
-    let borderWidth = 2;
-    let fillOpacity = 0.2;
-    // UI colors map - used as FALLBACK if CSV color is missing/invalid
-    let classColors = {
-        '0': '#ff0000',
-        '1': '#00ff00',
-        '2': '#0000ff',
-        '3': '#ffff00',
-        'unclassified': '#808080' // Color for indices not in map or invalid CSV color
-    };
-     // Store mapping from Predicted_Class_Index to Predicted_Class_Name
-    let classNameMap = {};
-
-
-    // --- Event listeners ---
-    document.getElementById('imageFolderInput').addEventListener('change', handleImageFolder);
-    document.getElementById('imageDropdown').addEventListener('change', handleImageSelection);
-    document.getElementById('csvFileInput').addEventListener('change', handleCSVFile);
-    document.getElementById('filterDropdown').addEventListener('change', handleFilterSelection);
-
-    document.getElementById('globalScale').addEventListener('input', redrawCanvas);
-    document.getElementById('borderWidth').addEventListener('input', handleStyleChange);
-    document.getElementById('fillOpacity').addEventListener('input', handleStyleChange);
-
-    // Color picker listeners (update the fallback map)
-    document.getElementById('class0Color').addEventListener('input', (e) => updateClassColor('0', e.target.value));
-    document.getElementById('class1Color').addEventListener('input', (e) => updateClassColor('1', e.target.value));
-    document.getElementById('class2Color').addEventListener('input', (e) => updateClassColor('2', e.target.value));
-    document.getElementById('class3Color').addEventListener('input', (e) => updateClassColor('3', e.target.value));
-    document.getElementById('unclassifiedColor').addEventListener('input', (e) => updateClassColor('unclassified', e.target.value));
-
-    function initializeColorPreviews() {
-         updateColorPreview('0', classColors['0']);
-         updateColorPreview('1', classColors['1']);
-         updateColorPreview('2', classColors['2']);
-         updateColorPreview('3', classColors['3']);
-         updateColorPreview('unclassified', classColors['unclassified']);
-    }
-    initializeColorPreviews();
-
-    function updateClassColor(classIndex, color) {
-        classColors[classIndex] = color; // Update the fallback map
-        updateColorPreview(classIndex, color);
-        redrawCanvas(); // Redraw might change particle colors if they were using fallback
-        updateClassCounters(); // Update counter colors/labels if needed
-    }
-
-     function updateColorPreview(classIndex, color) {
-         const previewId = `class${classIndex}Preview`;
-         const previewElement = document.getElementById(previewId);
-         if (previewElement) {
-             previewElement.style.backgroundColor = color;
-         }
-     }
-
-    // --- Zoom controls ---
-    document.getElementById('zoomIn').addEventListener('click', () => {
-        zoomFactor *= 1.2; updateZoomDisplay(); redrawCanvas();
-    });
-    document.getElementById('zoomOut').addEventListener('click', () => {
-        zoomFactor /= 1.2; if (zoomFactor < 0.1) zoomFactor = 0.1; updateZoomDisplay(); redrawCanvas();
-    });
-    document.getElementById('resetZoom').addEventListener('click', () => {
-        zoomFactor = 1; updateZoomDisplay();
-        if (backgroundImage && imageScaleInfo) { // Recenter
-             const canvas = document.getElementById('canvas'); const container = document.getElementById('scrollContainer');
-             canvas.width = imageScaleInfo.imgWidth * imageScaleInfo.scale * zoomFactor;
-             canvas.height = imageScaleInfo.imgHeight * imageScaleInfo.scale * zoomFactor;
-             canvas.style.width = `${canvas.width}px`; canvas.style.height = `${canvas.height}px`;
-             container.scrollTo({ left: (canvas.width - container.clientWidth) / 2, top: (canvas.height - container.clientHeight) / 2, behavior: 'smooth' });
-         }
-        redrawCanvas();
-    });
-
-    function updateZoomDisplay() { document.getElementById('zoomLevel').textContent = `${Math.round(zoomFactor * 100)}%`; }
-    function handleStyleChange() {
-        borderWidth = parseFloat(document.getElementById('borderWidth').value) || 2;
-        fillOpacity = parseFloat(document.getElementById('fillOpacity').value) || 0.2;
-        redrawCanvas();
-    }
-    const scrollContainer = document.getElementById('scrollContainer');
-    scrollContainer.addEventListener('scroll', redrawCanvas);
-
-    // Update class counters based on loaded CSV data AND current filter
-    function updateClassCounters() {
-        const countersContainer = document.getElementById('countersContainer');
-        countersContainer.innerHTML = '';
-
-        if (!data || data.length < 2 || !currentFilterValue) {
-             countersContainer.textContent = 'Load CSV data and select a file filter to see counts.';
-             return;
-        }
-
-        const counts = {}; // Keyed by Predicted_Class_Index
-        const headers = data[0];
-        const predictedIndexCol = headers.indexOf('Predicted_Class_Index');
-        const predictedNameCol = headers.indexOf('Predicted_Class_Name'); // Get name column index
-
-        if (predictedIndexCol === -1 || originalFileColIndex === -1) {
-            // ... (error handling for missing columns) ...
-             const missing = [];
-             if (predictedIndexCol === -1) missing.push('"Predicted_Class_Index"');
-             if (originalFileColIndex === -1) missing.push('"Original_File"');
-             countersContainer.textContent = `CSV missing required column(s): ${missing.join(' and ')}.`;
-             return;
-        }
-
-        // Initialize counts for known classes (from UI map) and unclassified
-        Object.keys(classColors).forEach(key => { counts[key] = 0; });
-
-        // Build/Update classNameMap and count occurrences
-        classNameMap = {}; // Reset map
-        for (let i = 1; i < data.length; i++) {
-             const row = data[i];
-             if (row[originalFileColIndex] !== currentFilterValue) continue; // Filter check
-
-             const predictedIndexRaw = row[predictedIndexCol];
-             const indexStr = String(predictedIndexRaw); // Use string for key
-             const predictedName = (predictedNameCol !== -1 && row[predictedNameCol]) ? row[predictedNameCol] : `Index ${indexStr}`; // Fallback name
-
-             // Update map (only need one entry per index)
-             if (!classNameMap[indexStr] && indexStr !== 'unclassified') {
-                 classNameMap[indexStr] = predictedName;
-             }
-
-             // Count
-             if (predictedIndexRaw !== null && predictedIndexRaw !== undefined && classColors.hasOwnProperty(indexStr)) {
-                 counts[indexStr]++;
-             } else {
-                 counts['unclassified']++;
-             }
-        }
-
-        // Create counter display elements
-        let totalCount = 0;
-        for (const classIndex in counts) {
-            const count = counts[classIndex];
-            if (count === 0 && !classColors.hasOwnProperty(classIndex)) continue; // Skip unused, undefined indices
-
-            totalCount += count;
-            const color = classColors[classIndex]; // Use UI map color for counter background
-            const counterDiv = document.createElement('div');
-            counterDiv.classList.add('class-counter');
-            counterDiv.style.backgroundColor = color || classColors['unclassified']; // Fallback color
-
-            // Set text color based on background brightness
-             const hex = (color && color.startsWith('#')) ? color.slice(1) : '808080';
-             let r = 0, g = 0, b = 0;
-             if (hex.length === 6) { [r, g, b] = [0, 2, 4].map(i => parseInt(hex.substr(i, 2), 16)); }
-             else if (hex.length === 3) { [r, g, b] = [0, 1, 2].map(i => parseInt(hex.substr(i, 1) + hex.substr(i, 1), 16)); }
-             const luminance = (0.299 * r + 0.587 * g + 0.114 * b);
-             counterDiv.style.color = luminance < 128 ? 'white' : 'black';
-
-            // Use name from map, or default label
-            let label = `Index ${classIndex}`; // Default
-            if (classIndex === 'unclassified') {
-                label = 'Other/NA';
-            } else if (classNameMap[classIndex]) {
-                label = classNameMap[classIndex];
-            }
-
-            counterDiv.textContent = `${label}: ${count}`;
-            countersContainer.appendChild(counterDiv);
-        }
-
-         if (totalCount === 0) {
-             countersContainer.textContent = `No cells found for filter "${currentFilterValue}".`;
-         }
-    }
-
-    // --- File handling --- (Largely unchanged, only CSV loading needs adjustment)
-    function handleImageFolder(event) {
-        const files = Array.from(event.target.files);
-        imageFiles = files.filter(f => /\.(tiff?|png|jpe?g|bmp)$/i.test(f.name));
-        const dropdown = document.getElementById('imageDropdown');
-        dropdown.innerHTML = '<option value="">Select an image</option>';
-        imageFiles.sort((a, b) => a.name.localeCompare(b.name)).forEach(file => {
-            const option = document.createElement('option');
-            option.value = file.webkitRelativePath; option.textContent = file.name; dropdown.appendChild(option);
-        });
-        dropdown.style.display = imageFiles.length > 0 ? 'block' : 'none';
-        document.getElementById('imageFolderName').textContent = files.length > 0 ? `${files.length} file(s) selected` : '';
-        backgroundImage = null; imageScaleInfo = null; currentImageFile = null;
-        document.getElementById('canvas').getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
-        if(data && currentFilterValue) { matchFilesAndLoad(); } else { redrawCanvas(); }
-    }
-
-    function handleImageSelection(event) {
-        const selectedPath = event.target.value;
-        if (!selectedPath) { backgroundImage = null; imageScaleInfo = null; currentImageFile = null; redrawCanvas(); return; }
-        currentImageFile = imageFiles.find(f => f.webkitRelativePath === selectedPath);
-        if (currentImageFile) { loadImageFile(currentImageFile); matchFilesAndLoad(); }
-        else { console.error("Selected image file not found:", selectedPath); backgroundImage = null; imageScaleInfo = null; redrawCanvas(); }
-    }
-
-    function handleCSVFile(event) {
-        const file = event.target.files[0];
-        const filterDropdown = document.getElementById('filterDropdown');
-        const csvFileNameSpan = document.getElementById('csvFileName');
-        if (!file) {
-            data = null; originalFileColIndex = -1; currentFilterValue = null; classNameMap = {};
-            filterDropdown.innerHTML = ''; filterDropdown.style.display = 'none'; csvFileNameSpan.textContent = '';
-            redrawCanvas(); updateClassCounters(); return;
-        }
-        if (!/\.csv$/i.test(file.name)) { alert("Please select a valid .csv file."); event.target.value = ''; csvFileNameSpan.textContent = ''; return; }
-        csvFileNameSpan.textContent = file.name;
-        loadCSVFile(file); // loadCSVFile handles parsing and dropdown population
-    }
-
-    function handleFilterSelection(event) {
-        currentFilterValue = event.target.value;
-        console.log("Filter selected:", currentFilterValue);
-        if (!currentFilterValue) { /* Handle deselection if needed */ }
-        matchFilesAndLoad(); // Try to load matching image
-        updateClassCounters(); // Update counts for the new filter
-        redrawCanvas();      // Redraw particles for the new filter
-    }
-
-    function matchFilesAndLoad() { // Logic remains the same
-         const imageDropdown = document.getElementById('imageDropdown');
-         const filterDropdown = document.getElementById('filterDropdown');
-         if (currentFilterValue && !currentImageFile && imageFiles.length > 0) {
-            const matchedImage = imageFiles.find(img => img.name.startsWith(currentFilterValue));
-            if (matchedImage) {
-                 console.log(`Auto-matched Filter "${currentFilterValue}" to Image "${matchedImage.name}"`);
-                 imageDropdown.value = matchedImage.webkitRelativePath;
-                 handleImageSelection({ target: { value: matchedImage.webkitRelativePath } });
-                 return;
-            } else { console.log(`No image found starting with filter "${currentFilterValue}"`); }
-         } else if (currentImageFile && data && !currentFilterValue) {
-             const imageBaseName = currentImageFile.name;
-             let matchedFilter = null;
-             for (let i = 0; i < filterDropdown.options.length; i++) {
-                 const optionValue = filterDropdown.options[i].value;
-                 if (optionValue && imageBaseName.startsWith(optionValue)) { matchedFilter = optionValue; break; }
-             }
-             if (matchedFilter) {
-                 console.log(`Auto-matched Image "${imageBaseName}" to Filter "${matchedFilter}"`);
-                 filterDropdown.value = matchedFilter;
-                 handleFilterSelection({ target: { value: matchedFilter } });
-                 return;
-             } else { console.log(`No filter value found matching image "${imageBaseName}"`); }
-         }
-         updateClassCounters(); // Ensure updates if no match triggered changes
-         redrawCanvas();
-    }
-
-    async function loadImageFile(file) { // Logic remains the same
-      console.log("Loading image:", file.name);
+  onMount(() => {
+    // Dynamically import UTIF to avoid SSR issues
+    (async () => {
       try {
-        const arrayBuffer = await file.arrayBuffer(); let bitmap;
-        if (/\.tiff?$/i.test(file.name)) {
-            const uint8Array = new Uint8Array(arrayBuffer); const ifds = UTIF.decode(uint8Array);
-            if (!ifds || ifds.length === 0) throw new Error("Could not decode TIFF IFDs.");
-            const page = ifds[0]; UTIF.decodeImage(uint8Array, page); const rgba = UTIF.toRGBA8(page);
-            console.log(`TIFF Decoded: ${page.width}x${page.height}`);
-            const imageData = new ImageData(new Uint8ClampedArray(rgba), page.width, page.height);
-            bitmap = await createImageBitmap(imageData);
-        } else {
-            bitmap = await createImageBitmap(new Blob([arrayBuffer], { type: file.type }));
-             console.log(`Image Decoded: ${bitmap.width}x${bitmap.height}`);
-        }
-        backgroundImage = bitmap;
-        imageScaleInfo = { scale: 1, offsetX: 0, offsetY: 0, imgWidth: bitmap.width, imgHeight: bitmap.height };
-        const canvas = document.getElementById('canvas');
-        canvas.width = bitmap.width; canvas.height = bitmap.height;
-        canvas.style.width = `${bitmap.width}px`; canvas.style.height = `${bitmap.height}px`;
-        zoomFactor = 1; updateZoomDisplay();
-        const container = document.getElementById('scrollContainer');
-        container.scrollTo({ left: (canvas.width - container.clientWidth) / 2, top: (canvas.height - container.clientHeight) / 2 });
-        redrawCanvas();
-      } catch (error) { /* ... error handling ... */
-          console.error('Image processing error:', error); alert(`Error processing image file: ${error.message}`);
-          backgroundImage = null; imageScaleInfo = null; currentImageFile = null;
-          document.getElementById('imageDropdown').value = ""; redrawCanvas();
-       }
+        const utifModule = await import('utif');
+        UTIF = utifModule.default || utifModule;
+        console.log("UTIF loaded successfully:", UTIF);
+      } catch (error) {
+        console.error("Error loading UTIF:", error);
+      }
+    })();
+    
+    // Initialize color previews
+    initializeColorPreviews();
+    updateZoomDisplay();
+    updateClassCounters(); // Show initial state
+    redrawCanvas(); // Initial draw
+  });
+
+  // --- UI Update Functions ---
+  function updateZoomDisplay() {
+    if (zoomLevelElement) zoomLevelElement.textContent = `${Math.round(zoomFactor * 100)}%`;
+  }
+
+  function initializeColorPreviews() {
+    // Update color previews in the DOM
+    document.querySelectorAll('.color-preview').forEach((preview) => {
+      const element = preview as HTMLElement;
+      const classIndex = element.dataset.classIndex;
+      if (classIndex && classColors[classIndex]) {
+        element.style.backgroundColor = classColors[classIndex];
+      }
+    });
+  }
+
+  function handleColorInput(classIndex: string) {
+    redrawCanvas();
+    updateClassCounters();
+  }
+
+  function updateClassCounters() {
+    if (!countersContainerElement) return;
+    countersContainerElement.innerHTML = '';
+
+    if (!data || data.length < 2 || !currentFilterValue) {
+      countersContainerElement.textContent = 'Load CSV data and select a file filter.';
+      return;
     }
 
-    function loadCSVFile(file) { // Adapted for new format requirements
-         console.log("Loading CSV:", file.name);
-         const filterDropdown = document.getElementById('filterDropdown');
-         classNameMap = {}; // Reset name map on new file load
-        Papa.parse(file, {
-            header: false, // Read header manually
-            delimiter: ";",
-            dynamicTyping: false, // Parse numbers manually with parseFloatSafe
-            skipEmptyLines: true,
-            complete: function(results) {
-                if (!results.data || results.data.length < 2) { /*... error handling ...*/ return; }
-                const headers = results.data[0];
-                const rows = results.data.slice(1);
-                console.log("CSV Parsed. Headers:", headers);
+    const counts: { [key: string]: number } = {};
+    const headers = data[0];
+    const predictedIndexCol = headers.indexOf('Predicted_Class_Index');
+    const predictedNameCol = headers.indexOf('Predicted_Class_Name');
 
-                originalFileColIndex = headers.indexOf('Original_File');
-                if (originalFileColIndex === -1) { /*... error handling ...*/ return; }
+    if (predictedIndexCol === -1 || originalFileColIndex === -1) {
+      const missing = [];
+      if (predictedIndexCol === -1) missing.push('"Predicted_Class_Index"');
+      if (originalFileColIndex === -1) missing.push('"Original_File"');
+      countersContainerElement.textContent = `CSV missing required column(s): ${missing.join(' and ')}.`;
+      return;
+    }
 
-                data = [headers, ...rows]; // Store full data
-                console.log(`Found ${rows.length} data rows.`);
+    Object.keys(classColors).forEach(key => { counts[key] = 0; });
+    classNameMap = {};
 
-                // Populate filter dropdown
-                const uniqueFiles = [...new Set(rows.map(row => row[originalFileColIndex]))].filter(Boolean).sort((a, b) => a.localeCompare(b));
-                filterDropdown.innerHTML = '<option value="">Select File Filter</option>';
-                uniqueFiles.forEach(fileName => { /* ... add options ... */
-                     const option = document.createElement('option'); option.value = fileName; option.textContent = fileName; filterDropdown.appendChild(option);
-                 });
-                filterDropdown.style.display = uniqueFiles.length > 0 ? 'block' : 'none';
-                currentFilterValue = null; // Reset filter selection
-                if (uniqueFiles.length === 0) { alert("No unique file identifiers found in 'Original_File' column."); }
+    for (let i = 1; i < data.length; i++) {
+      const row = data[i];
+      if (row[originalFileColIndex] !== currentFilterValue) continue;
 
-                // Check required drawing/coloring columns
-                 const requiredCols = ['Nucleus_X', 'Nucleus_Y', 'Nucleus_Major', 'Nucleus_Minor', 'Predicted_Class_Color', 'Predicted_Class_Index'];
-                 const missingCols = requiredCols.filter(col => !headers.includes(col));
-                 if (missingCols.length > 0) {
-                     alert(`CSV might be missing columns needed for drawing/coloring: ${missingCols.join(', ')}`);
-                 }
+      const predictedIndexRaw = row[predictedIndexCol];
+      const indexStr = String(predictedIndexRaw).trim();
+      const predictedName = (predictedNameCol !== -1 && row[predictedNameCol]) 
+        ? String(row[predictedNameCol]).trim() 
+        : `Index ${indexStr}`;
 
-                matchFilesAndLoad(); // Trigger matching/redraw
-            },
-            error: function(error) { /*... error handling ...*/
-                 console.error('CSV parsing error:', error); alert(`Error parsing CSV file: ${error.message}`);
-                 data = null; originalFileColIndex = -1; currentFilterValue = null; classNameMap = {};
-                 filterDropdown.innerHTML = ''; filterDropdown.style.display = 'none';
-                 updateClassCounters(); redrawCanvas();
-            }
+      if (!classNameMap[indexStr] && indexStr !== 'unclassified') {
+        classNameMap[indexStr] = predictedName;
+      }
+
+      if (predictedIndexRaw !== null && predictedIndexRaw !== undefined && classColors.hasOwnProperty(indexStr)) {
+        counts[indexStr]++;
+      } else {
+        counts['unclassified']++;
+      }
+    }
+
+    let totalCount = 0;
+    for (const classIndex in counts) {
+      const count = counts[classIndex];
+      if (count === 0 && !classColors.hasOwnProperty(classIndex)) continue;
+
+      totalCount += count;
+      const color = classColors[classIndex] || classColors['unclassified'];
+      let label = `Index ${classIndex}`;
+      if (classIndex === 'unclassified') label = 'Other/NA';
+      else if (classNameMap[classIndex]) label = classNameMap[classIndex];
+
+      appendCounter(label, count, color);
+    }
+
+    if (totalCount === 0) {
+      countersContainerElement.textContent = `No cells found for filter "${currentFilterValue}".`;
+    }
+  }
+
+  function appendCounter(name: string, count: number, color: string) {
+    if (!countersContainerElement) return;
+    const counterDiv = document.createElement('div');
+    counterDiv.classList.add('class-counter');
+    counterDiv.style.backgroundColor = color;
+    try {
+      const hex = color.startsWith('#') ? color.slice(1) : '808080';
+      if (hex.length === 6 || hex.length === 3) {
+        const r = parseInt(hex.length === 3 ? hex[0]+hex[0] : hex.slice(0,2), 16);
+        const g = parseInt(hex.length === 3 ? hex[1]+hex[1] : hex.slice(2,4), 16);
+        const b = parseInt(hex.length === 3 ? hex[2]+hex[2] : hex.slice(4,6), 16);
+        if(!isNaN(r) && !isNaN(g) && !isNaN(b)){
+          const luminance = (0.299 * r + 0.587 * g + 0.114 * b);
+          counterDiv.style.color = luminance < 128 ? 'white' : 'black';
+        } else { counterDiv.style.color = 'black'; }
+      } else { counterDiv.style.color = 'black'; }
+    } catch(e) { console.warn("Color parse error:", e); counterDiv.style.color = 'black'; }
+    counterDiv.textContent = `${name}: ${count}`;
+    countersContainerElement.appendChild(counterDiv);
+  }
+
+  // --- Event Handlers ---
+  function handleStyleChange() { redrawCanvas(); }
+  function handleGlobalScaleChange() { redrawCanvas(); }
+
+  // --- Zoom Handlers ---
+  function zoomIn() { zoomFactor *= 1.2; updateZoomDisplay(); redrawCanvas(); }
+  function zoomOut() { zoomFactor /= 1.2; if (zoomFactor < 0.1) zoomFactor = 0.1; updateZoomDisplay(); redrawCanvas(); }
+  function resetZoom() {
+    zoomFactor = 1;
+    updateZoomDisplay();
+    if (backgroundImage && imageScaleInfo && canvasElement && scrollContainerElement) {
+      const { imgWidth, imgHeight, scale } = imageScaleInfo;
+      const targetWidth = imgWidth * scale * zoomFactor;
+      const targetHeight = imgHeight * scale * zoomFactor;
+      if (canvasElement.width !== targetWidth || canvasElement.height !== targetHeight) {
+        canvasElement.width = targetWidth; canvasElement.height = targetHeight;
+        canvasElement.style.width = `${targetWidth}px`; canvasElement.style.height = `${targetHeight}px`;
+      }
+      requestAnimationFrame(() => {
+        scrollContainerElement.scrollTo({
+          left: (targetWidth - scrollContainerElement.clientWidth) / 2,
+          top: (targetHeight - scrollContainerElement.clientHeight) / 2,
+          behavior: 'smooth'
         });
+      });
+    }
+    redrawCanvas();
+  }
+
+  // --- File Handling ---
+  async function handleImageFolder(event: Event) {
+    console.log("Image folder selection triggered");
+    const target = event.target as HTMLInputElement;
+    const files = Array.from(target.files || []);
+    imageFiles = files.filter(f => /\.(tiff?|png|jpe?g|bmp)$/i.test(f.name))
+                      .sort((a, b) => a.name.localeCompare(b.name));
+    imageFiles = [...imageFiles]; // Trigger reactivity
+
+    if (imageFolderNameElement) imageFolderNameElement.textContent = files.length > 0 ? `${files.length} file(s) selected` : '';
+    if (imageDropdownElement) imageDropdownElement.style.display = imageFiles.length > 0 ? 'block' : 'none';
+
+    backgroundImage = null; imageScaleInfo = null; currentImageFile = null;
+    if (imageDropdownElement) imageDropdownElement.value = "";
+    matchFilesAndLoad();
+  }
+
+  function handleImageSelection(event: Event) {
+    const selectedPath = (event.target as HTMLSelectElement).value;
+    if (!selectedPath) {
+      backgroundImage = null; imageScaleInfo = null; currentImageFile = null; redrawCanvas(); return;
+    }
+    currentImageFile = imageFiles.find(f => ((f as any).webkitRelativePath || f.name) === selectedPath) || null;
+    if (currentImageFile) {
+      loadImageFile(currentImageFile);
+      matchFilesAndLoad();
+    } else {
+      console.error("Selected image file not found:", selectedPath);
+      backgroundImage = null; imageScaleInfo = null; redrawCanvas();
+    }
+  }
+
+  function handleCSVFile(event: Event) {
+    console.log("CSV file selection triggered");
+    const target = event.target as HTMLInputElement;
+    const file = target.files?.[0];
+
+    data = null; originalFileColIndex = -1; currentFilterValue = ""; classNameMap = {}; uniqueFilterValues = [];
+    if (filterDropdownElement) { filterDropdownElement.innerHTML = ''; filterDropdownElement.style.display = 'none'; filterDropdownElement.value = ""; }
+    if (csvFileNameElement) csvFileNameElement.textContent = '';
+
+    if (!file) { redrawCanvas(); updateClassCounters(); return; }
+
+    if (!/\.csv$/i.test(file.name)) {
+      alert("Please select a valid .csv file."); target.value = ''; return;
+    }
+    if (csvFileNameElement) csvFileNameElement.textContent = file.name;
+    loadCSVFile(file);
+  }
+
+  function handleFilterSelection(event: Event) {
+    currentFilterValue = (event.target as HTMLSelectElement).value; // Value is bound
+    console.log("Filter selected:", currentFilterValue);
+    
+    // Only call matchFilesAndLoad if we're not already in a matching process
+    if (!isMatchingInProgress) {
+      matchFilesAndLoad();
+    } else {
+      console.log("Skipping matchFilesAndLoad call from handleFilterSelection due to recursion prevention");
+    }
+    
+    updateClassCounters();
+    redrawCanvas();
+  }
+
+  // Flag to prevent infinite recursion
+  let isMatchingInProgress = false;
+
+  function matchFilesAndLoad() {
+    // Prevent infinite recursion
+    if (isMatchingInProgress) {
+      console.log("Matching already in progress, skipping recursive call");
+      return;
     }
 
-    // *** MODIFIED: This function gets color FOR DRAWING ***
-    // Priority: 1. CSV Color Column, 2. UI Map using Index Column, 3. Unclassified Color
-    function getParticleDrawColor(particleRowData, headers) {
-        if (!particleRowData || !headers) return classColors['unclassified'];
-
-        const colorCol = headers.indexOf('Predicted_Class_Color');
-        const indexCol = headers.indexOf('Predicted_Class_Index');
-
-        // 1. Try CSV Color Column
-        if (colorCol !== -1) {
-            const csvColor = particleRowData[colorCol];
-            if (csvColor && typeof csvColor === 'string' && csvColor.startsWith('#')) {
-                // Basic validation: is it a non-empty string starting with #?
-                // More robust validation could check hex format precisely.
-                return csvColor;
-            }
-            // If CSV color is present but invalid, log it maybe?
-            // console.warn(`Invalid color format in CSV: ${csvColor}`);
-        }
-
-        // 2. Fallback to UI Map using Index Column
-        if (indexCol !== -1) {
-             const predictedIndexRaw = particleRowData[indexCol];
-             if (predictedIndexRaw !== null && predictedIndexRaw !== undefined && String(predictedIndexRaw).trim() !== '') {
-                 const parsedIndex = parseFloatSafe(predictedIndexRaw);
-                 const indexStr = !isNaN(parsedIndex) ? String(Math.round(parsedIndex)) : String(predictedIndexRaw);
-                 if (classColors.hasOwnProperty(indexStr)) {
-                     return classColors[indexStr]; // Use color from UI map
-                 }
-             }
-        }
-
-        // 3. Final fallback
-        return classColors['unclassified'];
-    }
-
-    function getRGBAFromColor(color, opacity) { // Logic remains the same
-        if (!color) return `rgba(128, 128, 128, ${opacity})`; // Default grey
-         if (String(color).startsWith('rgba')) return color; // Already RGBA
-         try {
-             let r, g, b;
-             if (color.startsWith('#')) {
-                 let hex = color.slice(1);
-                 if (hex.length === 3) { hex = hex[0]+hex[0]+hex[1]+hex[1]+hex[2]+hex[2]; }
-                 if (hex.length === 6) {
-                     r = parseInt(hex.substring(0, 2), 16); g = parseInt(hex.substring(2, 4), 16); b = parseInt(hex.substring(4, 6), 16);
-                 } else { throw new Error("Invalid hex format"); }
-             } else { /* Optional: Handle 'rgb(...)' or named colors if needed, otherwise default grey */
-                 console.warn(`Unsupported color format '${color}'. Using default.`);
-                 return `rgba(128, 128, 128, ${opacity})`;
-             }
-             if (isNaN(r) || isNaN(g) || isNaN(b)) { throw new Error("Parsed color values not numbers"); }
-             return `rgba(${r}, ${g}, ${b}, ${opacity})`;
-         } catch (e) {
-             console.warn(`Could not parse color '${color}': ${e.message}. Using default.`);
-             return `rgba(128, 128, 128, ${opacity})`;
-         }
-     }
-
-    function parseFloatSafe(value) { // Logic remains the same
-        if (value === null || value === undefined) return NaN;
-        const strValue = String(value);
-        const cleanedStr = /^\s*-?\d+,?\d*\s*$/.test(strValue) ? strValue.replace(',', '.') : strValue; // Allow comma decimal
-        return parseFloat(cleanedStr);
-    }
-
-
-    // *** MODIFIED redrawCanvas FUNCTION ***
-    function redrawCanvas() {
-        const canvas = document.getElementById('canvas');
-        const ctx = canvas.getContext('2d');
-        const container = document.getElementById('scrollContainer');
-
-        // --- Clear Canvas ---
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-        // --- Exit/Message if no image ---
-        if (!backgroundImage || !imageScaleInfo) {
-            ctx.fillStyle = '#ccc'; ctx.font = '20px sans-serif'; ctx.textAlign = 'center';
-            const center_x = canvas.width > 0 ? canvas.width / 2 : 150;
-            const center_y = canvas.height > 0 ? canvas.height / 2 : 100;
-            ctx.fillText('Load an image folder', center_x, center_y);
+    isMatchingInProgress = true;
+    
+    try {
+      // Try matching filter to image
+      if (currentFilterValue && !currentImageFile && imageFiles.length > 0) {
+        const matchedImage = imageFiles.find(img => img.name.startsWith(currentFilterValue!));
+        if (matchedImage) {
+          console.log(`Auto-matched Filter "${currentFilterValue}" to Image "${matchedImage.name}"`);
+          if (imageDropdownElement) {
+            const imagePath = (matchedImage as any).webkitRelativePath || matchedImage.name;
+            imageDropdownElement.value = imagePath;
+            // Trigger image loading by simulating selection change
+            handleImageSelection({ target: imageDropdownElement } as unknown as Event);
+            isMatchingInProgress = false;
+            return; // Image load will trigger redraw
+          }
+        } else { console.log(`No image found starting with filter "${currentFilterValue}"`); }
+      }
+      // Try matching image to filter
+      else if (currentImageFile && data && !currentFilterValue && uniqueFilterValues.length > 0) {
+        const imageBaseName = currentImageFile.name;
+        const matchedFilter = uniqueFilterValues.find(filterVal => imageBaseName.startsWith(filterVal));
+        if (matchedFilter) {
+          console.log(`Auto-matched Image "${imageBaseName}" to Filter "${matchedFilter}"`);
+          if (filterDropdownElement) {
+            filterDropdownElement.value = matchedFilter;
+            // Set currentFilterValue directly instead of calling handleFilterSelection
+            currentFilterValue = matchedFilter;
+            console.log("Setting filter value directly to:", currentFilterValue);
+            updateClassCounters();
+            redrawCanvas();
+            isMatchingInProgress = false;
             return;
+          }
+        } else { console.log(`No filter value found matching image "${imageBaseName}"`); }
+      }
+      // If no match or conditions not met, ensure redraw/counters update
+      updateClassCounters();
+      redrawCanvas();
+    } finally {
+      isMatchingInProgress = false;
+    }
+  }
+
+  async function loadImageFile(file: File) {
+    console.log("Loading image:", file.name);
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+      let bitmap: ImageBitmap;
+
+      if (/\.tiff?$/i.test(file.name)) {
+        if (!UTIF) {
+          console.error("UTIF library not loaded");
+          alert("UTIF library not loaded. Cannot process TIFF files.");
+          return;
+        }
+        
+        const uint8Array = new Uint8Array(arrayBuffer);
+        const ifds = UTIF.decode(uint8Array);
+        if (!ifds || ifds.length === 0) throw new Error("Could not decode TIFF IFDs.");
+        const page = ifds[0];
+        UTIF.decodeImage(uint8Array, page);
+        const rgba = UTIF.toRGBA8(page);
+        console.log(`TIFF Decoded: ${page.width}x${page.height}`);
+        const imageData = new ImageData(new Uint8ClampedArray(rgba), page.width, page.height);
+        bitmap = await createImageBitmap(imageData);
+        
+        // For TIFF files, use the bitmap directly instead of creating an HTMLImageElement
+        backgroundImage = bitmap;
+      } else {
+        bitmap = await createImageBitmap(new Blob([arrayBuffer], { type: file.type }));
+        console.log(`Image Decoded: ${bitmap.width}x${bitmap.height}`);
+        
+        // For non-TIFF files, we can still use the original approach
+        const img = new Image();
+        const dataUrl = await blobToDataURL(new Blob([arrayBuffer], { type: file.type }));
+        img.src = dataUrl;
+        await img.decode();
+        backgroundImage = img;
+      }
+
+      imageScaleInfo = { scale: 1, offsetX: 0, offsetY: 0, imgWidth: bitmap.width, imgHeight: bitmap.height };
+
+      if (canvasElement) {
+        canvasElement.width = imageScaleInfo.imgWidth * zoomFactor;
+        canvasElement.height = imageScaleInfo.imgHeight * zoomFactor;
+        canvasElement.style.width = `${canvasElement.width}px`;
+        canvasElement.style.height = `${canvasElement.height}px`;
+        if (scrollContainerElement) {
+          scrollContainerElement.scrollTo({ left: (canvasElement.width - scrollContainerElement.clientWidth) / 2, top: (canvasElement.height - scrollContainerElement.clientHeight) / 2 });
+        }
+      }
+      redrawCanvas();
+
+    } catch (error: any) {
+      console.error('Image processing error:', error);
+      alert(`Error processing image file: ${error.message}`);
+      backgroundImage = null; imageScaleInfo = null; currentImageFile = null;
+      if (imageDropdownElement) imageDropdownElement.value = "";
+      redrawCanvas();
+    }
+  }
+
+  function blobToDataURL(blob: Blob): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  function loadCSVFile(file: File) {
+    console.log("Loading CSV:", file.name);
+    classNameMap = {};
+
+    Papa.parse<string[]>(file, {
+      header: false,
+      delimiter: ";",
+      dynamicTyping: false, // Parse numbers manually with parseFloatSafe
+      skipEmptyLines: true,
+      complete: (results: ParseResult<string[]>) => {
+        if (!results.data || results.data.length < 2) {
+          alert('CSV file is empty or has no data rows.');
+          data = null;
+          originalFileColIndex = -1;
+          currentFilterValue = "";
+          uniqueFilterValues = [];
+          if(filterDropdownElement) {
+            filterDropdownElement.innerHTML = '';
+            filterDropdownElement.style.display = 'none';
+            filterDropdownElement.value = "";
+          }
+          redrawCanvas();
+          updateClassCounters();
+          return;
+        }
+        
+        const headers = results.data[0];
+        const rows = results.data.slice(1);
+        console.log("CSV Parsed. Headers:", headers);
+
+        originalFileColIndex = headers.indexOf('Original_File');
+        if (originalFileColIndex === -1) {
+          alert("CSV missing required 'Original_File' column.");
+          data = null;
+          originalFileColIndex = -1;
+          currentFilterValue = "";
+          uniqueFilterValues = [];
+          if(filterDropdownElement) {
+            filterDropdownElement.innerHTML = '';
+            filterDropdownElement.style.display = 'none';
+            filterDropdownElement.value = "";
+          }
+          redrawCanvas();
+          updateClassCounters();
+          return;
         }
 
-        // --- Get necessary values ---
-        const globalScale = parseFloatSafe(document.getElementById('globalScale').value) || 1; // Use safe parse
-        const { scale, imgWidth, imgHeight, offsetX, offsetY } = imageScaleInfo;
+        data = [headers, ...rows];
+        console.log(`Found ${rows.length} data rows.`);
 
-        // --- Canvas Sizing ---
-        const effectiveWidth = imgWidth * scale * zoomFactor;
-        const effectiveHeight = imgHeight * scale * zoomFactor;
-        if (canvas.width !== effectiveWidth || canvas.height !== effectiveHeight) {
-            canvas.width = effectiveWidth; canvas.height = effectiveHeight;
+        // Extract unique filter values and populate dropdown
+        uniqueFilterValues = [...new Set(rows.map(row => row[originalFileColIndex]))].filter(Boolean).sort((a, b) => a.localeCompare(b));
+        
+        if (filterDropdownElement) {
+          // Clear and repopulate the dropdown
+          filterDropdownElement.innerHTML = '<option value="">Select File Filter from CSV</option>';
+          
+          uniqueFilterValues.forEach(fileName => {
+            const option = document.createElement('option');
+            option.value = fileName;
+            option.textContent = fileName;
+            filterDropdownElement.appendChild(option);
+          });
+          
+          filterDropdownElement.style.display = uniqueFilterValues.length > 0 ? 'block' : 'none';
+          filterDropdownElement.value = ""; // Reset selection
         }
-        canvas.style.width = `${effectiveWidth}px`; canvas.style.height = `${effectiveHeight}px`;
-
-        // --- Draw Background Image (Simplified) ---
-        ctx.drawImage(backgroundImage, 0, 0, canvas.width, canvas.height);
-
-        // --- Particle Drawing (Visualizer Logic) ---
-        // Requires Data AND Filter AND essential columns
-        if (data && data.length > 1 && imageScaleInfo && currentFilterValue && originalFileColIndex !== -1) {
-            const headers = data[0];
-            // Get required column indices once
-            const xCol = headers.indexOf('Nucleus_X');
-            const yCol = headers.indexOf('Nucleus_Y');
-            const majorCol = headers.indexOf('Nucleus_Major');
-            const minorCol = headers.indexOf('Nucleus_Minor');
-            const angleCol = headers.indexOf('Nucleus_Angle');
-            // Color columns needed for getParticleDrawColor are checked inside it
-
-            if (xCol === -1 || yCol === -1 || majorCol === -1 || minorCol === -1) {
-                console.warn("Missing essential columns (Nucleus_X/Y/Major/Minor) for particle drawing.");
-                if (!ctx.warningDrawn) { // Draw warning only once per redraw
-                     ctx.fillStyle = 'orange'; ctx.font = '16px sans-serif'; ctx.textAlign = 'center';
-                     ctx.fillText('Warning: Missing essential Nucleus columns in CSV!', canvas.width / 2, 30);
-                     ctx.warningDrawn = true; // Mark warning as drawn
-                }
-            } else {
-                 ctx.warningDrawn = false; // Reset warning flag if columns are present
-                 const invGlobalScale = 1.0 / globalScale;
-                 const scaleFactor = invGlobalScale * scale * zoomFactor; // Combined scaling
-
-                 // Viewport Culling Bounds
-                 const viewportLeft = container.scrollLeft; const viewportTop = container.scrollTop;
-                 const viewportWidth = container.clientWidth; const viewportHeight = container.clientHeight;
-                 const margin = 50 * zoomFactor; // Margin in zoomed pixels
-                 const viewLeft = viewportLeft - margin; const viewTop = viewportTop - margin;
-                 const viewRight = viewportLeft + viewportWidth + margin; const viewBottom = viewportTop + viewportHeight + margin;
-
-                 let drawnCount = 0;
-
-                 for (let i = 1; i < data.length; i++) {
-                     const row = data[i];
-
-                     // Apply Filter
-                     if (row[originalFileColIndex] !== currentFilterValue) {
-                         continue;
-                     }
-
-                     // Get values safely
-                     const xValue = parseFloatSafe(row[xCol]);
-                     const yValue = parseFloatSafe(row[yCol]);
-                     const majorValue = parseFloatSafe(row[majorCol]);
-                     const minorValue = parseFloatSafe(row[minorCol]);
-                     const angleValue = (angleCol !== -1 && row[angleCol] !== null) ? parseFloatSafe(row[angleCol]) : 0;
-
-                     if (isNaN(xValue) || isNaN(yValue) || isNaN(majorValue) || isNaN(minorValue)) continue;
-
-                     const major = majorValue * scaleFactor;
-                     const minor = minorValue * scaleFactor;
-                     const angle = -(angleValue * Math.PI) / 180.0;
-                     const x = (xValue * invGlobalScale * scale + offsetX) * zoomFactor;
-                     const y = (yValue * invGlobalScale * scale + offsetY) * zoomFactor;
-
-                     // Culling check
-                     const maxRadius = Math.max(major, minor) / 2.0 * 1.1;
-                     if (x + maxRadius < viewLeft || x - maxRadius > viewRight || y + maxRadius < viewTop || y - maxRadius > viewBottom) {
-                         continue;
-                     }
-                     drawnCount++;
-
-                     // Draw Ellipse
-                     // *** Use getParticleDrawColor to get color from CSV or fallback ***
-                     const particleColor = getParticleDrawColor(row, headers);
-
-                     ctx.save();
-                     ctx.strokeStyle = particleColor; // Use determined color
-                     ctx.fillStyle = getRGBAFromColor(particleColor, fillOpacity); // Use determined color
-                     ctx.lineWidth = borderWidth; // Use UI border width (not scaled by zoom)
-
-                     if (major <= 0 || minor <= 0) { ctx.restore(); continue; } // Skip invalid shapes
-
-                     ctx.translate(x, y);
-                     ctx.rotate(angle);
-                     ctx.beginPath();
-                     ctx.ellipse(0, 0, major / 2.0, minor / 2.0, 0, 0, 2 * Math.PI);
-                     ctx.fill();
-                     ctx.stroke();
-                     ctx.restore();
-                 }
-                 // console.log(`Drawn ${drawnCount} particles for filter "${currentFilterValue}".`);
-            }
-        } else if (data && data.length > 1 && !currentFilterValue) {
-             // Message if data loaded but no filter selected
-             ctx.fillStyle = '#aaa'; ctx.font = '18px sans-serif'; ctx.textAlign = 'center';
-             if (backgroundImage) { // Show only if image is also loaded
-                 ctx.fillText('Select a file filter to view cells', canvas.width / 2, canvas.height / 2 + 30);
-             }
+        
+        currentFilterValue = ""; // Reset filter selection
+        
+        if (uniqueFilterValues.length === 0) {
+          alert("No unique file identifiers found in 'Original_File' column.");
         }
-        // console.log("redrawCanvas finished.");
+
+        // Check required columns for drawing and coloring
+        const requiredCols = ['Nucleus_X', 'Nucleus_Y', 'Nucleus_Major', 'Nucleus_Minor', 'Predicted_Class_Index'];
+        const recommendedCols = ['Predicted_Class_Color', 'Predicted_Class_Name'];
+        
+        const missingRequired = requiredCols.filter(col => !headers.includes(col));
+        const missingRecommended = recommendedCols.filter(col => !headers.includes(col));
+        
+        if (missingRequired.length > 0) {
+          alert(`CSV missing required columns for drawing/coloring: ${missingRequired.join(', ')}`);
+        }
+        
+        if (missingRecommended.length > 0) {
+          console.warn(`CSV missing recommended columns: ${missingRecommended.join(', ')}`);
+        }
+
+        // Try to match files after loading CSV
+        matchFilesAndLoad();
+      },
+      error: (error: any) => {
+        console.error('CSV parsing error:', error);
+        alert(`Error parsing CSV file: ${error.message}`);
+        data = null;
+        originalFileColIndex = -1;
+        currentFilterValue = "";
+        classNameMap = {};
+        uniqueFilterValues = [];
+        if(filterDropdownElement) {
+          filterDropdownElement.innerHTML = '';
+          filterDropdownElement.style.display = 'none';
+          filterDropdownElement.value = "";
+        }
+        redrawCanvas();
+        updateClassCounters();
+      }
+    });
+  }
+
+  // --- Drawing Logic ---
+  function getParticleDrawColor(particleRowData: string[], headers: string[]): string {
+    if (!particleRowData || !headers) return classColors['unclassified'];
+    const colorCol = headers.indexOf('Predicted_Class_Color');
+    const indexCol = headers.indexOf('Predicted_Class_Index');
+
+    if (colorCol !== -1) {
+      const csvColor = particleRowData[colorCol];
+      if (csvColor && typeof csvColor === 'string' && csvColor.startsWith('#')) return csvColor;
+    }
+    if (indexCol !== -1) {
+      const predictedIndexRaw = particleRowData[indexCol];
+      if (predictedIndexRaw !== null && predictedIndexRaw !== undefined) {
+         const indexStr = String(predictedIndexRaw).trim();
+         if (classColors.hasOwnProperty(indexStr)) return classColors[indexStr];
+      }
+    }
+    return classColors['unclassified'];
+  }
+
+  function getRGBAFromColor(color: string, opacity: number): string {
+    const clampedOpacity = Math.max(0, Math.min(1, opacity));
+    if (!color) return `rgba(128, 128, 128, ${clampedOpacity})`;
+    try {
+      let r: number, g: number, b: number;
+      if (color.startsWith('#')) {
+        let hex = color.slice(1);
+        if (hex.length === 3) hex = hex.split('').map(c => c + c).join('');
+        if (hex.length !== 6) throw new Error("Invalid hex length");
+        [r, g, b] = [0, 2, 4].map(i => parseInt(hex.slice(i, i + 2), 16));
+      } else if (color.startsWith('rgb')) {
+        const match = color.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+        if (!match) throw new Error("Invalid RGB");
+        [r, g, b] = match.slice(1, 4).map(Number);
+      } else throw new Error("Invalid color format");
+      if (isNaN(r) || isNaN(g) || isNaN(b)) throw new Error("Invalid color values");
+      return `rgba(${r}, ${g}, ${b}, ${clampedOpacity})`;
+    } catch (e: any) {
+      console.warn("Color parse error:", e);
+      return `rgba(128, 128, 128, ${clampedOpacity})`;
+    }
+  }
+
+  function parseFloatSafe(value: string | number | null | undefined): number {
+    if (value === null || value === undefined) return NaN;
+    const strValue = String(value);
+    const cleanedStr = /^\s*-?\d+,?\d*\s*$/.test(strValue) ? strValue.replace(',', '.') : strValue;
+    return parseFloat(cleanedStr);
+  }
+
+  function redrawCanvas() {
+    if (!canvasElement) return;
+    const ctx = canvasElement.getContext('2d');
+    if (!ctx || !scrollContainerElement) return;
+
+    const baseWidth = imageScaleInfo ? imageScaleInfo.imgWidth : (canvasElement.width / zoomFactor);
+    const baseHeight = imageScaleInfo ? imageScaleInfo.imgHeight : (canvasElement.height / zoomFactor);
+
+    const maxWidth = 16384; const maxHeight = 16384;
+    const targetWidth = Math.min(baseWidth * zoomFactor, maxWidth);
+    const targetHeight = Math.min(baseHeight * zoomFactor, maxHeight);
+
+    if (canvasElement.width !== targetWidth || canvasElement.height !== targetHeight) {
+      canvasElement.width = targetWidth;
+      canvasElement.height = targetHeight;
+    }
+    canvasElement.style.width = `${targetWidth}px`;
+    canvasElement.style.height = `${targetHeight}px`;
+
+    ctx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+    if (backgroundImage && imageScaleInfo) {
+      const { imgWidth, imgHeight, offsetX, offsetY } = imageScaleInfo;
+      
+      // Draw the image - handle both ImageBitmap and HTMLImageElement
+      if (backgroundImage instanceof ImageBitmap) {
+        // For ImageBitmap (TIFF files), use source and destination rectangles
+        ctx.drawImage(
+          backgroundImage,
+          0, 0, imgWidth, imgHeight, // Source rectangle
+          offsetX * zoomFactor, offsetY * zoomFactor, canvasElement.width, canvasElement.height // Destination rectangle
+        );
+      } else {
+        // For HTMLImageElement (non-TIFF files), use the previous approach
+        ctx.drawImage(backgroundImage, offsetX * zoomFactor, offsetY * zoomFactor, canvasElement.width, canvasElement.height);
+      }
+    } else {
+      ctx.fillStyle = '#f0f0f0';
+      ctx.fillRect(0, 0, canvasElement.width, canvasElement.height);
+      ctx.fillStyle = '#aaa'; ctx.font = '20px sans-serif'; ctx.textAlign = 'center';
+      ctx.fillText('Load an image folder', canvasElement.width / 2, canvasElement.height / 2);
     }
 
+    if (data && data.length > 1 && imageScaleInfo && currentFilterValue && originalFileColIndex !== -1) {
+      const headers = data[0];
+      const xCol = headers.indexOf('Nucleus_X');
+      const yCol = headers.indexOf('Nucleus_Y');
+      const majorCol = headers.indexOf('Nucleus_Major');
+      const minorCol = headers.indexOf('Nucleus_Minor');
+      const angleCol = headers.indexOf('Nucleus_Angle');
+
+      if (xCol === -1 || yCol === -1 || majorCol === -1 || minorCol === -1) {
+         ctx.fillStyle = 'orange'; ctx.font = '16px sans-serif'; ctx.textAlign = 'center';
+         ctx.fillText('Warning: Missing essential Nucleus columns in CSV!', canvasElement.width / 2, 30);
+      } else {
+        const { scale, offsetX, offsetY } = imageScaleInfo;
+        const invGlobalScale = 1.0 / globalScaleValue;
+        const scaleFactor = invGlobalScale * scale * zoomFactor;
+
+        const viewLeft = scrollContainerElement.scrollLeft;
+        const viewTop = scrollContainerElement.scrollTop;
+        const viewRight = viewLeft + scrollContainerElement.clientWidth;
+        const viewBottom = viewTop + scrollContainerElement.clientHeight;
+        const margin = 50 * zoomFactor;
+
+        for (let i = 1; i < data.length; i++) {
+          const row = data[i];
+          if (row[originalFileColIndex] !== currentFilterValue) continue;
+
+          const xValue = parseFloatSafe(row[xCol]);
+          const yValue = parseFloatSafe(row[yCol]);
+          const majorValue = parseFloatSafe(row[majorCol]);
+          const minorValue = parseFloatSafe(row[minorCol]);
+          const angleValue = (angleCol !== -1) ? parseFloatSafe(row[angleCol]) : 0;
+
+          if (isNaN(xValue) || isNaN(yValue) || isNaN(majorValue) || isNaN(minorValue) || majorValue <= 0 || minorValue <= 0) continue;
+
+          const major = majorValue * scaleFactor;
+          const minor = minorValue * scaleFactor;
+          const angle = -(angleValue * Math.PI) / 180.0;
+          const x = (xValue * invGlobalScale * scale + offsetX) * zoomFactor;
+          const y = (yValue * invGlobalScale * scale + offsetY) * zoomFactor;
+
+          const halfMajor = major / 2.0;
+          const halfMinor = minor / 2.0;
+          const maxRadius = Math.max(halfMajor, halfMinor) * 1.1;
+
+          if (x + maxRadius < viewLeft - margin || x - maxRadius > viewRight + margin ||
+              y + maxRadius < viewTop - margin || y - maxRadius > viewBottom + margin) {
+            continue;
+          }
+
+          const particleColor = getParticleDrawColor(row, headers);
+          ctx.save();
+          ctx.strokeStyle = particleColor;
+          if (fillOpacity > 0) ctx.fillStyle = getRGBAFromColor(particleColor, fillOpacity);
+          if (borderWidth > 0) ctx.lineWidth = borderWidth;
+
+          ctx.translate(x, y);
+          ctx.rotate(angle);
+          ctx.beginPath();
+          ctx.ellipse(0, 0, halfMajor, halfMinor, 0, 0, 2 * Math.PI);
+
+          if (fillOpacity > 0) ctx.fill();
+          if (borderWidth > 0) ctx.stroke();
+          ctx.restore();
+        }
+      }
+    } else if (data && data.length > 1 && !currentFilterValue) {
+      ctx.fillStyle = '#aaa'; ctx.font = '18px sans-serif'; ctx.textAlign = 'center';
+      if (backgroundImage) {
+        ctx.fillText('Select a file filter to view cells', canvasElement.width / 2, canvasElement.height / 2 + 30);
+      }
+    }
+  }
 </script>
 
+<div class="bg-gray-100 dark:bg-gray-900 min-h-screen">
+  <div class="container mx-auto py-8 px-4">
+    <h1 class="text-3xl font-bold text-center text-blue-700 dark:text-blue-400 mb-6">Cell Visualization Tool</h1>
+    <h3 class="text-m font-bold text-gray-700 mb-5 text-center">This webpage is still under testing, if you have issues try downloading the html file</h3>
+
+    <!-- Controls Section -->
+    <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-4 mb-5 grid grid-cols-1 md:grid-cols-2 gap-4">
+      <!-- Input Files Group -->
+      <div class="border border-gray-300 dark:border-gray-700 p-3 rounded">
+        <h3 class="text-lg font-semibold text-blue-600 dark:text-blue-400 mb-3">Input Files</h3>
+        <div class="mb-2">
+          <label class="bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded cursor-pointer" for="imageFolderInput">Choose Image Folder</label>
+          <input type="file" id="imageFolderInput" multiple on:change={handleImageFolder} class="hidden" use:addWebkitDirectory />
+          <span bind:this={imageFolderNameElement} class="ml-2 italic text-sm text-gray-600 dark:text-gray-400"></span>
+        </div>
+        
+        <select bind:this={imageDropdownElement} on:change={handleImageSelection} class="w-full p-2 border border-gray-300 dark:border-gray-600 rounded dark:bg-gray-700 dark:text-white mb-4" style="display: none;">
+          <option value="">Select an image file from folder</option>
+          {#each imageFiles as file}
+            <option value={(file as any).webkitRelativePath || file.name}>{file.name}</option>
+          {/each}
+        </select>
+
+        <div class="mt-3">
+          <label class="bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-2 px-4 rounded cursor-pointer" for="csvFileInput">Choose Cell Data File (.csv)</label>
+          <input type="file" id="csvFileInput" accept=".csv" on:change={handleCSVFile} class="hidden" />
+          <span bind:this={csvFileNameElement} class="ml-2 italic text-sm text-gray-600 dark:text-gray-400"></span>
+        </div>
+        
+        <div class="filter-group mt-3">
+          <label for="filterDropdown" class="block mb-1 text-sm font-medium">Filter by Original File:</label>
+          <select id="filterDropdown" bind:this={filterDropdownElement} on:change={handleFilterSelection} class="w-full p-2 border border-gray-300 dark:border-gray-600 rounded dark:bg-gray-700 dark:text-white" style="display: none;">
+            <option value="">Select File Filter from CSV</option>
+            {#each uniqueFilterValues as filterVal}
+              <option value={filterVal}>{filterVal}</option>
+            {/each}
+          </select>
+        </div>
+      </div>
+
+      <!-- Display Settings Group -->
+      <div class="border border-gray-300 dark:border-gray-700 p-3 rounded">
+        <h3 class="text-lg font-semibold text-blue-600 dark:text-blue-400 mb-3">Display Settings</h3>
+        <div class="settings-group space-y-2">
+          <div class="setting-row flex items-center gap-2">
+            <label for="globalScale" class="w-24">Scale:</label>
+            <input type="number" id="globalScale" step="0.01" min="0.01" max="2" bind:value={globalScaleValue} on:input={handleGlobalScaleChange} class="flex-grow p-1 border rounded dark:bg-gray-700 dark:border-gray-600" />
+          </div>
+          <div class="setting-row flex items-center gap-2">
+            <label for="borderWidth" class="w-24">Border Width:</label>
+            <input type="number" id="borderWidth" step="0.5" min="0" bind:value={borderWidth} on:input={handleStyleChange} class="flex-grow p-1 border rounded dark:bg-gray-700 dark:border-gray-600" />
+          </div>
+          <div class="setting-row flex items-center gap-2">
+            <label for="fillOpacity" class="w-24">Fill Opacity:</label>
+            <input type="number" id="fillOpacity" step="0.05" min="0" max="1" bind:value={fillOpacity} on:input={handleStyleChange} class="flex-grow p-1 border rounded dark:bg-gray-700 dark:border-gray-600" />
+          </div>
+        </div>
+
+        <div class="zoom-controls flex items-center gap-2 mt-3">
+          <label class="w-24">Zoom:</label>
+          <button on:click={zoomOut} class="px-3 py-1 bg-blue-500 hover:bg-blue-600 text-white rounded">-</button>
+          <span bind:this={zoomLevelElement} class="px-2">100%</span>
+          <button on:click={zoomIn} class="px-3 py-1 bg-blue-500 hover:bg-blue-600 text-white rounded">+</button>
+          <button on:click={resetZoom} class="px-3 py-1 bg-gray-500 hover:bg-gray-600 text-white rounded">Reset</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Class Color Controls Section -->
+    <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-4 mb-5 flex flex-row flex-wrap justify-center items-center gap-4">
+      <h3 class="text-lg font-semibold text-blue-600 dark:text-blue-400 mb-3 w-full">Class Colors (Fallback)</h3>
+      
+      <div class="color-control-group flex items-center gap-2">
+        <label for="class0Color">Index 0:</label>
+        <input type="color" id="class0Color" bind:value={classColors['0']} on:input={() => handleColorInput('0')} class="w-8 h-8 p-0 border rounded" />
+        <span class="color-preview w-5 h-5 border rounded inline-block" data-class-index="0" style="background-color: {classColors['0']};"></span>
+      </div>
+      
+      <div class="color-control-group flex items-center gap-2">
+        <label for="class1Color">Index 1:</label>
+        <input type="color" id="class1Color" bind:value={classColors['1']} on:input={() => handleColorInput('1')} class="w-8 h-8 p-0 border rounded" />
+        <span class="color-preview w-5 h-5 border rounded inline-block" data-class-index="1" style="background-color: {classColors['1']};"></span>
+      </div>
+      
+      <div class="color-control-group flex items-center gap-2">
+        <label for="class2Color">Index 2:</label>
+        <input type="color" id="class2Color" bind:value={classColors['2']} on:input={() => handleColorInput('2')} class="w-8 h-8 p-0 border rounded" />
+        <span class="color-preview w-5 h-5 border rounded inline-block" data-class-index="2" style="background-color: {classColors['2']};"></span>
+      </div>
+      
+      <div class="color-control-group flex items-center gap-2">
+        <label for="class3Color">Index 3:</label>
+        <input type="color" id="class3Color" bind:value={classColors['3']} on:input={() => handleColorInput('3')} class="w-8 h-8 p-0 border rounded" />
+        <span class="color-preview w-5 h-5 border rounded inline-block" data-class-index="3" style="background-color: {classColors['3']};"></span>
+      </div>
+      
+      <div class="color-control-group flex items-center gap-2">
+        <label for="unclassifiedColor">Other/NA:</label>
+        <input type="color" id="unclassifiedColor" bind:value={classColors['unclassified']} on:input={() => handleColorInput('unclassified')} class="w-8 h-8 p-0 border rounded" />
+        <span class="color-preview w-5 h-5 border rounded inline-block" data-class-index="unclassified" style="background-color: {classColors['unclassified']};"></span>
+      </div>
+    </div>
+
+    <!-- Counters Section -->
+    <div class="flex flex-wrap justify-center gap-2 mb-5" bind:this={countersContainerElement}>
+      <!-- Class counters dynamically added -->
+    </div>
+
+    <!-- Canvas Section -->
+    <div class="w-[90vw] h-[70vh] overflow-auto border-2 border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 relative shadow-inner mx-auto" bind:this={scrollContainerElement} on:scroll={redrawCanvas}>
+      <canvas bind:this={canvasElement} class="block bg-gray-200 dark:bg-gray-700"></canvas>
+    </div>
+  </div>
+</div>
