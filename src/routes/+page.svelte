@@ -34,9 +34,9 @@
   </section>
 
   <section class="mb-8">
-    <h2 class="text-2xl font-bold mb-4 text-center">SCHELI Showcase</h2>
+    <h2 class="text-2xl font-bold mb-4 text-center">SCHELI Installation</h2>
     <div class="relative aspect-w-16 aspect-h-9 mx-auto" style="max-width: 800px;">
-      <iframe src="https://www.youtube.com/embed/YOUR_YOUTUBE_VIDEO_ID" title="SCHELI Plugin Showcase" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen class="w-full h-full"></iframe>
+      <iframe src="https://www.youtube.com/embed/BkNhT8zFRWk" title="SCHELI Plugin Installation Tutorial" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen class="w-full h-full"></iframe>
     </div>
   </section>
 

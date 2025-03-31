@@ -15,12 +15,21 @@
   </section>
 
   <section class="mb-8">
-    <h2 class="text-2xl font-bold mb-4">Usage Examples</h2>
-    <!-- Add usage examples here -->
+    <h2 class="text-2xl font-bold mb-4 text-center">Segmentation Tutorial</h2>
+    <div class="relative aspect-w-16 aspect-h-9 mx-auto" style="max-width: 800px;">
+      <iframe src="https://www.youtube.com/embed/_4uUcUwN3f0" title="SCHELI Segmentation" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen class="w-full h-full"></iframe>
+    </div>
+  </section>
+
+  <section class="mb-8">
+    <h2 class="text-2xl font-bold mb-4 text-center">Classification Tutorial</h2>
+    <div class="relative aspect-w-16 aspect-h-9 mx-auto" style="max-width: 800px;">
+      <iframe src="https://www.youtube.com/embed/n-6RJXikKnE" title="SCHELI Classification" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen class="w-full h-full"></iframe>
+    </div>
   </section>
 
   <footer class="text-center text-gray-500">
     <a href="/" class="text-blue-500 hover:text-blue-700">Back to Homepage</a>
-    <p>&amp;copy; 2025 Sebastian Micu</p>
+    <p>© 2025 Sebastian Micu</p>
   </footer>
 </div>
