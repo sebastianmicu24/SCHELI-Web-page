@@ -1,6 +1,7 @@
 <svelte:head>
-  <title>Sebastian Micu</title>
-  <meta name="description" content="Portfolio website for Sebastian Micu" />
+  <title>SCHELI Plugin - Liver Segmentation & Classification Tool</title>
+  <meta name="description" content="SCHELI: An ImageJ/Fiji plugin for automated liver segmentation and classification of Hematoxylin Eosin (H&E) stained images. Includes tools for manual cell classification and visualization." />
+  <meta name="keywords" content="SCHELI, liver segmentation, liver classification, hematoxylin eosin, H&E, ImageJ plugin, Fiji plugin, cell classification, image analysis, histology" />
 </svelte:head>
 
 <div class="container mx-auto py-4 sm:py-8 px-4 sm:px-6">

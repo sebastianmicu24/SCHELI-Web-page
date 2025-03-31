@@ -1,6 +1,7 @@
 <svelte:head>
-  <title>SCHELI Documentation</title>
-  <meta name="description" content="SCHELI Plugin Documentation" />
+  <title>SCHELI Documentation - Liver Segmentation & Classification</title>
+  <meta name="description" content="Documentation for the SCHELI ImageJ/Fiji plugin. Learn how to use SCHELI for liver segmentation, classification, and analysis of Hematoxylin Eosin (H&E) images." />
+  <meta name="keywords" content="SCHELI documentation, liver segmentation tutorial, liver classification tutorial, hematoxylin eosin analysis, H&E image processing, ImageJ plugin guide, Fiji plugin guide" />
 </svelte:head>
 
 <div class="container mx-auto py-4 sm:py-8 px-4 sm:px-6">
